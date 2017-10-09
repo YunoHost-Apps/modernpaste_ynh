@@ -1,0 +1,207 @@
+#!/bin/bash
+
+#=================================================
+# GENERIC START
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+set -eu
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# MANAGE SCRIPT FAILURE
+#=================================================
+
+# Exit if an error occurs during the execution of the script
+ynh_abort_if_errors
+
+#=================================================
+# RETRIEVE ARGUMENTS FROM THE MANIFEST
+#=================================================
+
+domain=$YNH_APP_ARG_DOMAIN
+path_url=$YNH_APP_ARG_PATH
+is_public=$YNH_APP_ARG_IS_PUBLIC
+
+# This is a multi-instance app, meaning it can be installed several times independently
+# The id of the app as stated in the manifest is available as $YNH_APP_ID
+# The instance number is available as $YNH_APP_INSTANCE_NUMBER (equals "1", "2", ...)
+# The app instance name is available as $YNH_APP_INSTANCE_NAME
+#    - the first time the app is installed, YNH_APP_INSTANCE_NAME = ynhexample
+#    - the second time the app is installed, YNH_APP_INSTANCE_NAME = ynhexample__2
+#    - ynhexample__{N} for the subsequent installations, with N=3,4, ...
+# The app instance name is probably what you are interested the most, since this is
+# guaranteed to be unique. This is a good unique identifier to define installation path,
+# db names, ...
+app=$YNH_APP_INSTANCE_NAME
+
+#=================================================
+# CHECK IF THE APP CAN BE INSTALLED WITH THESE ARGS
+#=================================================
+
+# Normalize the url path syntax
+path_url=$(ynh_normalize_url_path "$path_url")
+
+# Check web path availability
+ynh_webpath_available "$domain" "$path_url"
+# Register (book) web path
+ynh_webpath_register "$app" "$domain" "$path_url"
+
+final_path=/var/www/$app
+test ! -e "$final_path" || ynh_die "This path already contains a folder"
+
+mkdir -p "$final_path"
+
+#=================================================
+# STORE SETTINGS FROM MANIFEST
+#=================================================
+
+ynh_app_setting_set "$app" domain "$domain"
+ynh_app_setting_set "$app" path "$path_url"
+ynh_app_setting_set "$app" is_public "$is_public"
+ynh_app_setting_set "$app" final_path "$final_path"
+
+#=================================================
+# STANDARD MODIFICATIONS
+#=================================================
+
+#=================================================
+# INSTALL DEPENDENCIES
+#=================================================
+
+ynh_install_app_dependencies build-essential libmysqlclient-dev \
+			python-dev python-virtualenv python-cffi \
+			libffi-dev libssl-dev uwsgi uwsgi-plugin-python
+
+#=================================================
+# CREATE a MySQL database
+#=================================================
+
+db_pwd=$(ynh_string_random)
+db_name=$app
+
+ynh_app_setting_set "$app" db_pwd "$db_pwd"
+ynh_app_setting_set "$app" db_name "$db_name"
+
+ynh_mysql_create_user "$app" "$db_pwd"
+ynh_mysql_create_db "$app" "$db_name"
+
+#=================================================
+# NGINX CONFIGURATION
+#=================================================
+
+# Create a dedicated nginx config
+ynh_add_nginx_config
+
+#=================================================
+# CREATE DEDICATED USER
+#=================================================
+
+ynh_system_user_create "$app" "$final_path"
+
+#=================================================
+# SPECIFIC SETUP
+#=================================================
+
+git clone https://github.com/LINKIWI/modern-paste "$final_path"
+(
+	cd "$final_path"
+	git checkout 32c0c64155ba9a725ae0da087da9c4676de81e85
+)
+
+mkdir -p "$final_path/app/static/build/js"
+mkdir -p "$final_path/app/static/build/css"
+
+# SPECIFIC SETUP uwsgi
+#=================================================
+
+# Copy Files
+cp ../conf/uwsgi.ini "$final_path/uwsgi.ini"
+ynh_replace_string "__FINALPATH__" "$final_path" "$final_path/uwsgi.ini"
+
+cp ../conf/uwsgi_service "/etc/systemd/system/$app.service"
+ynh_replace_string "__NAME__" "$app" "/etc/systemd/system/$app.service"
+ynh_replace_string "__FINALPATH__" "$final_path" "/etc/systemd/system/$app.service"
+
+# Start service
+systemctl enable "$app.service"
+
+yunohost service add "$app.service" --log "/var/log/$app/APP.log"
+
+#=================================================
+# SPECIFIC SETUP config.py
+#=================================================
+ikey=$(ynh_string_random)
+fkey=$(ynh_string_random)
+
+cp ../conf/config.py "$final_path/app/config.py"
+
+ynh_replace_string "__APP__"       "$app"        "$final_path/app/config.py"
+ynh_replace_string "__DOMAIN__"    "$domain"     "$final_path/app/config.py"
+ynh_replace_string "__FINALPATH__" "$final_path" "$final_path/app/config.py"
+ynh_replace_string "__DBPASSWD__"  "$db_pwd"     "$final_path/app/config.py"
+ynh_replace_string "__IDENCKEY__"  "$ikey"       "$final_path/app/config.py"
+ynh_replace_string "__FASKKEY__"   "$fkey"       "$final_path/app/config.py"
+
+#=================================================
+# PIP INSTALLATION
+#=================================================
+virtualenv "$final_path/venv"
+#run source in a 'sub shell'
+(
+	set +eu
+	cd "$final_path/app/"
+	source "$final_path/venv/bin/activate"
+	"$final_path/venv/bin/pip" install --requirement "$final_path/requirements.txt"
+	PYTHONPATH="." python ../build/build_database.py --create
+	# requires java for minifying...
+	# "$final_path/venv/bin/python" "$final_path/build/build_js.py --dev"
+	# requires sass (via gem) for minifying...
+	# "$final_path/venv/bin/python" "$final_path/build/build_css.py --prod"
+)
+
+#=================================================
+# STORE THE CHECKSUM OF THE CONFIG FILE
+#=================================================
+
+# Calculate and store the config file checksum into the app settings
+ynh_store_file_checksum "$final_path/app/config.py"
+
+#=================================================
+# GENERIC FINALIZATION
+#=================================================
+# SECURE FILES AND DIRECTORIES
+#=================================================
+
+# Set permissions to app files
+chown -R "$app": "$final_path"
+
+#=================================================
+# SETUP LOGROTATE
+#=================================================
+
+# Use logrotate to manage application logfile(s)
+ynh_use_logrotate
+
+#=================================================
+# SETUP SSOWAT
+#=================================================
+
+if [ "$is_public" -eq 0 ]
+then	# Remove the public access
+	ynh_app_setting_delete "$app" skipped_uris
+fi
+# Make app public if necessary
+if [ "$is_public" -eq 1 ]
+then
+	# unprotected_uris allows SSO credentials to be passed anyway.
+	ynh_app_setting_set "$app" unprotected_uris "/"
+fi
+
+#=================================================
+# RELOAD NGINX
+#=================================================
+
+systemctl start "$app.service"
+systemctl reload nginx
