@@ -3,12 +3,12 @@
 	"id": "modernpaste",
 	"packaging_format": 1,
 	"requirements": {
-		"yunohost": ">= 2.7.0"
+		"yunohost": ">= 3.4.0"
 	},
 	"description": {
 		"en": "A modern, feature-rich Pastebin alternative"
 	},
-	"version": "0.20171008-git",
+	"version": "0.20180728-git",
 	"url": "https://github.com/LINKIWI/modern-paste",
 	"license": "MIT",
 	"maintainer": {

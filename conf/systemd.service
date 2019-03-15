@@ -1,0 +1,26 @@
+[Unit]
+Description=uWSGI instance for __APP__
+Requires=network.target
+After=network.target
+
+[Service]
+User=__APP__
+Group=__APP__
+RemainAfterExit=yes
+WorkingDirectory=__FINALPATH__
+RuntimeDirectory=__APP__
+
+ExecStartPre=/bin/mkdir -p /var/log/__APP__
+ExecStartPre=/bin/chown -R __APP__ /var/log/__APP__
+
+ExecStart=/usr/bin/uwsgi \
+	  --ini /etc/uwsgi/apps-available/__APP__.ini \
+	  --socket /var/run/__APP__/socket \
+	  --logto /var/log/__APP__/__APP__.log
+ExecStop=/bin/kill -INT $MAINPID
+
+Restart=always
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target

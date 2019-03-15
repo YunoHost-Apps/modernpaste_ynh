@@ -60,7 +60,6 @@ mkdir -p "$final_path"
 ynh_app_setting_set "$app" domain "$domain"
 ynh_app_setting_set "$app" path "$path_url"
 ynh_app_setting_set "$app" is_public "$is_public"
-ynh_app_setting_set "$app" final_path "$final_path"
 
 #=================================================
 # STANDARD MODIFICATIONS
@@ -70,9 +69,9 @@ ynh_app_setting_set "$app" final_path "$final_path"
 # INSTALL DEPENDENCIES
 #=================================================
 
-ynh_install_app_dependencies build-essential libmysqlclient-dev \
-			python-dev python-virtualenv python-cffi \
-			libffi-dev libssl-dev uwsgi uwsgi-plugin-python
+ynh_install_app_dependencies uwsgi uwsgi-plugin-python python-virtualenv \
+	default-libmysqlclient-dev \
+	ruby-sass
 
 #=================================================
 # CREATE a MySQL database
@@ -86,6 +85,14 @@ ynh_app_setting_set "$app" db_name "$db_name"
 
 ynh_mysql_create_user "$app" "$db_pwd"
 ynh_mysql_create_db "$app" "$db_name"
+
+#=================================================
+# DOWNLOAD, CHECK AND UNPACK SOURCE
+#=================================================
+
+ynh_app_setting_set "$app" final_path "$final_path"
+# Download, check integrity, uncompress and patch the source from app.src
+ynh_setup_source "$final_path"
 
 #=================================================
 # NGINX CONFIGURATION
@@ -103,31 +110,19 @@ ynh_system_user_create "$app" "$final_path"
 #=================================================
 # SPECIFIC SETUP
 #=================================================
-
-git clone https://github.com/LINKIWI/modern-paste "$final_path"
-(
-	cd "$final_path"
-	git checkout 32c0c64155ba9a725ae0da087da9c4676de81e85
-)
-
-mkdir -p "$final_path/app/static/build/js"
-mkdir -p "$final_path/app/static/build/css"
-
 # SPECIFIC SETUP uwsgi
 #=================================================
 
 # Copy Files
-cp ../conf/uwsgi.ini "$final_path/uwsgi.ini"
-ynh_replace_string "__FINALPATH__" "$final_path" "$final_path/uwsgi.ini"
+uwsgi_file="/etc/uwsgi/apps-available/$app.ini"
 
-cp ../conf/uwsgi_service "/etc/systemd/system/$app.service"
-ynh_replace_string "__NAME__" "$app" "/etc/systemd/system/$app.service"
-ynh_replace_string "__FINALPATH__" "$final_path" "/etc/systemd/system/$app.service"
+cp ../conf/uwsgi.ini "$uwsgi_file"
+ynh_replace_string "__FINALPATH__" "$final_path" "$uwsgi_file"
+ynh_replace_string "__APP__"       "$app"        "$uwsgi_file"
 
-# Start service
-systemctl enable "$app.service"
+ynh_add_systemd_config
 
-yunohost service add "$app.service" --log "/var/log/$app/APP.log"
+yunohost service add "$app" --log "/var/log/$app/$app.log"
 
 #=================================================
 # SPECIFIC SETUP config.py
@@ -147,18 +142,24 @@ ynh_replace_string "__FASKKEY__"   "$fkey"       "$final_path/app/config.py"
 #=================================================
 # PIP INSTALLATION
 #=================================================
+
+mkdir -p "$final_path/app/static/build/js"
+mkdir -p "$final_path/app/static/build/css"
+
 virtualenv "$final_path/venv"
 #run source in a 'sub shell'
 (
-	set +eu
-	cd "$final_path/app/"
+	set +o nounset
 	source "$final_path/venv/bin/activate"
-	"$final_path/venv/bin/pip" install --requirement "$final_path/requirements.txt"
-	PYTHONPATH="." python ../build/build_database.py --create
-	# requires java for minifying...
-	# "$final_path/venv/bin/python" "$final_path/build/build_js.py --dev"
+	set -o nounset
+	pip install --requirement "$final_path/requirements.txt"
+	# already done
+	# PYTHONPATH="." python ../build/build_database.py --create
+
+	# don't compile
+	# PYTHONPATH="." python ../build/build_js.py --dev
 	# requires sass (via gem) for minifying...
-	# "$final_path/venv/bin/python" "$final_path/build/build_css.py --prod"
+	PYTHONPATH="$final_path/app/" python "$final_path/build/build_css.py" --prod
 )
 
 #=================================================
@@ -203,5 +204,5 @@ fi
 # RELOAD NGINX
 #=================================================
 
-systemctl start "$app.service"
+systemctl start "$app"
 systemctl reload nginx

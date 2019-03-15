@@ -21,9 +21,9 @@ db_name=$(ynh_app_setting_get "$app" db_name)
 # REMOVE THE Service
 #=================================================
 
-systemctl disable "$app.service"
-systemctl stop "$app.service"
-ynh_secure_remove "/etc/systemd/system/$app.service"
+ynh_remove_systemd_config
+
+
 
 #=================================================
 # REMOVE THE MySQL DATABASE
@@ -67,6 +67,16 @@ ynh_remove_logrotate
 #=================================================
 
 ynh_secure_remove "/etc/systemd/system/$app.service"
+
+#=================================================
+# REMOVE SERVICE FROM ADMIN PANEL
+#=================================================
+
+# Remove a service from the admin panel, added by `yunohost service add`
+if yunohost service status "$app" >/dev/null 2>&1
+then
+	yunohost service remove "$app"
+fi
 
 #=================================================
 # GENERIC FINALIZATION
