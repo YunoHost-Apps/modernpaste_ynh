@@ -40,18 +40,14 @@ app=$YNH_APP_INSTANCE_NAME
 # CHECK IF THE APP CAN BE INSTALLED WITH THESE ARGS
 #=================================================
 
-# Normalize the url path syntax
-path_url=$(ynh_normalize_url_path "$path_url")
-
-# Check web path availability
-ynh_webpath_available "$domain" "$path_url"
-# Register (book) web path
-ynh_webpath_register "$app" "$domain" "$path_url"
-
 final_path=/var/www/$app
 test ! -e "$final_path" || ynh_die "This path already contains a folder"
 
-mkdir -p "$final_path"
+# Normalize the url path syntax
+path_url=$(ynh_normalize_url_path "$path_url")
+
+# Register (book) web path
+ynh_webpath_register "$app" "$domain" "$path_url"
 
 #=================================================
 # STORE SETTINGS FROM MANIFEST
@@ -63,8 +59,6 @@ ynh_app_setting_set "$app" is_public "$is_public"
 
 #=================================================
 # STANDARD MODIFICATIONS
-#=================================================
-
 #=================================================
 # INSTALL DEPENDENCIES
 #=================================================

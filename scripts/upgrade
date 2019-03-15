@@ -58,6 +58,14 @@ path_url=$(ynh_normalize_url_path "$path_url")
 ynh_add_nginx_config
 
 #=================================================
+# UPGRADE DEPENDENCIES
+#=================================================
+
+ynh_install_app_dependencies uwsgi uwsgi-plugin-python python-virtualenv \
+	default-libmysqlclient-dev \
+	ruby-sass
+
+#=================================================
 # CREATE DEDICATED USER
 #=================================================
 

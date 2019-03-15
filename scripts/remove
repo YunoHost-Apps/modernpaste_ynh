@@ -16,14 +16,25 @@ source /usr/share/yunohost/helpers
 app=$YNH_APP_INSTANCE_NAME
 
 db_name=$(ynh_app_setting_get "$app" db_name)
+final_path=$(ynh_app_setting_get $app final_path)
 
 #=================================================
-# REMOVE THE Service
+# STANDARD REMOVE
+#=================================================
+# REMOVE SERVICE FROM ADMIN PANEL
+#=================================================
+
+# Remove a service from the admin panel, added by `yunohost service add`
+if yunohost service status "$app" >/dev/null 2>&1
+then
+	ynh_print_info "Removing $app service"
+	yunohost service remove "$app"
+fi
+#=================================================
+# STOP AND REMOVE SERVICE
 #=================================================
 
 ynh_remove_systemd_config
-
-
 
 #=================================================
 # REMOVE THE MySQL DATABASE
@@ -44,7 +55,7 @@ ynh_remove_app_dependencies
 #=================================================
 
 # Remove the app directory securely
-ynh_secure_remove "/var/www/$app"
+ynh_secure_remove "$final_path"
 
 #=================================================
 # REMOVE NGINX CONFIGURATION
@@ -66,17 +77,11 @@ ynh_remove_logrotate
 # REMOVE uwsgi and systemd files
 #=================================================
 
-ynh_secure_remove "/etc/systemd/system/$app.service"
+# Remove the uwsgi file
+ynh_secure_remove "/etc/uwsgi/apps-available/$app.ini"
 
-#=================================================
-# REMOVE SERVICE FROM ADMIN PANEL
-#=================================================
-
-# Remove a service from the admin panel, added by `yunohost service add`
-if yunohost service status "$app" >/dev/null 2>&1
-then
-	yunohost service remove "$app"
-fi
+# Remove the log files
+ynh_secure_remove "/var/log/$app/"
 
 #=================================================
 # GENERIC FINALIZATION
