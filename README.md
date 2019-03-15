@@ -10,13 +10,12 @@ A modern, feature-rich Pastebin alternative for YunoHost
   * [ ] nothing
 
 * to be confirmed
-  * [ ] nothing
+  * [x] install/remove/upgrade
+  * [x] backup/restore
+  * [x] Improve log file and add logrotate
 
 * to be added:
-  * [ ] install/remove/upgrade
-  * [ ] backup/restore
   * [ ] Email support
-  * [ ] Improve log file and add logrotate
   * [ ] increase service restrictions
 
 ## Links

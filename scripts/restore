@@ -27,14 +27,16 @@ final_path=$(ynh_app_setting_get "$app" final_path)
 db_name=$(ynh_app_setting_get "$app" db_name)
 db_pwd=$(ynh_app_setting_get "$app" psqlpwd)
 
+
 #=================================================
 # CHECK IF THE APP CAN BE RESTORED
 #=================================================
+ynh_print_info "Validating restoration parameters..."
 
-# Check web path availability
-ynh_webpath_available "$domain" "$path_url"
-
-test ! -e "$final_path" || ynh_die "This path already contains a folder"
+ynh_webpath_available "$domain" "$path_url" \
+	|| ynh_die "Path not available: ${domain}${path_url}"
+test ! -d "$final_path" \
+|| ynh_die "There is already a directory: $final_path "
 
 #=================================================
 # STANDARD RESTORATION STEPS
@@ -55,9 +57,7 @@ ynh_restore_file "$final_path"
 #=================================================
 
 # Create the dedicated user (if not existing)
-ynh_system_user_create "$app" "/home/$app"
-# Allow bash for our user, so he can use hub
-chsh --shell /bin/bash "$app"
+ynh_system_user_create "$app" "$final_path"
 
 #=================================================
 # RESTORE USER RIGHTS
@@ -72,36 +72,37 @@ chown -R "$app": "$final_path"
 # REINSTALL DEPENDENCIES
 #=================================================
 
-ynh_install_app_dependencies build-essential libmysqlclient-dev \
-			python-dev python-virtualenv python-cffi \
-			libffi-dev libssl-dev uwsgi uwsgi-plugin-python
+ynh_install_app_dependencies uwsgi uwsgi-plugin-python python-virtualenv \
+	default-libmysqlclient-dev \
+	ruby-sass
+
 
 #=================================================
-# RESTORE THE PostgreSQL DATABASE
+# RESTORE THE MYSQL DATABASE
 #=================================================
 
-ynh_psql_test_if_first_run
-ynh_psql_setup_db "$db_name" "$db_name" "$db_pwd"
-ynh_psql_execute_file_as_root ./db.sql "$db_name"
+db_pwd=$(ynh_app_setting_get "$app" db_pwd)
+ynh_mysql_setup_db "$db_name" "$db_name" "$db_pwd"
+ynh_mysql_connect_as "$db_name" "$db_pwd" "$db_name" < ./db.sql
 
 #=================================================
 # RESTORE THE SERVICE
 #=================================================
 
 ynh_restore_file "/etc/systemd/system/$app.service"
-systemctl enable "$app.service"
+systemctl enable "$app"
 
 #=================================================
 # ADVERTISE SERVICE IN ADMIN PANEL
 #=================================================
 
-yunohost service add "$app.service" --log "/var/log/$app/APP.log"
+yunohost service add "$app" --log "/var/log/$app/$app.log"
 
 #=================================================
-# RESTORE THE CRON FILE
+# RESTORE uwsgi file
 #=================================================
 
-ynh_restore_file "/etc/cron.d/$app"
+ynh_restore_file "/etc/uwsgi/apps-available/$app.ini"
 
 #=================================================
 # RESTORE THE LOGROTATE CONFIGURATION
@@ -116,5 +117,4 @@ ynh_restore_file "/etc/logrotate.d/$app"
 #=================================================
 
 systemctl reload nginx
-systemctl stop "$app.service"
-systemctl start "$app.service"
+systemctl start "$app"
