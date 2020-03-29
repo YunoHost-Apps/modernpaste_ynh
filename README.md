@@ -1,4 +1,7 @@
 # Modern Paste
+
+[![Integration level](https://dash.yunohost.org/integration/modernpaste.svg)](https://dash.yunohost.org/appci/app/modernpaste) ![](https://ci-apps.yunohost.org/ci/badges/modernpaste.status.svg) ![](https://ci-apps.yunohost.org/ci/badges/modernpaste.maintain.svg)
+
 A modern, feature-rich Pastebin alternative for YunoHost
 
 **Shipped version:** ecc4168bda2a9e5981d495f9e0538258d9f727a2
